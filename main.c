@@ -55,7 +55,7 @@ int main(int argc,char * argv[])
     pthread_t camera_tid;
     init_camera_thread(&camera_tid);
     pthread_join(&camera_tid,NULL);
-    uninit_camera_thread(&camera_tid);
+    // uninit_camera_thread(&camera_tid);
     uninit_log(log_file_fd);
 
 

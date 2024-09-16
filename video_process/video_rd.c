@@ -1,111 +1,136 @@
+#include <stdio.h>
+#include <stdlib.h>
+
+
 #include "video_rd.h"
 
+// 视频宽度和高度（根据摄像头的分辨率调整）
+#define WIDTH 960
+#define HEIGHT 540
+#define FPS 20
 
-void init_video(VideoContext *vc, const char *filename, int width, int height, int fps) {
-    // Allocate format context and set output format to MP4
-    avformat_alloc_output_context2(&vc->format_context, NULL, NULL, filename);
-    if (!vc->format_context) {
-        fprintf(stderr, "Could not allocate output format context\n");
-        return;
+// // FFmpeg 初始化
+// void initialize_ffmpeg() {
+//     // 注册所有编解码器和格式
+//     av_register_all();
+// }
+
+// 设置输出文件和视频流的编码参数
+AVFormatContext* setup_output(const char *filename, AVCodecContext **codec_context, AVStream **video_stream) {
+    AVFormatContext *format_context = NULL;
+    AVCodec *codec = NULL;
+
+    // 为输出文件分配格式上下文
+    avformat_alloc_output_context2(&format_context, NULL, NULL, filename);
+    if (!format_context) {
+        fprintf(stderr, "Could not create output context\n");
+        exit(1);
     }
 
-    // Find and create a video stream with H.264 codec
-    AVCodec *codec = avcodec_find_encoder(AV_CODEC_ID_H264);
+    // 查找 H.264 编码器
+    codec = avcodec_find_encoder(AV_CODEC_ID_H264);
     if (!codec) {
-        fprintf(stderr, "H.264 codec not found\n");
-        return;
+        fprintf(stderr, "Codec not found\n");
+        exit(1);
     }
 
-    vc->video_stream = avformat_new_stream(vc->format_context, codec);
-    if (!vc->video_stream) {
-        fprintf(stderr, "Could not create video stream\n");
-        return;
+    // 创建一个新的视频流
+    *video_stream = avformat_new_stream(format_context, codec);
+    if (!*video_stream) {
+        fprintf(stderr, "Could not allocate stream\n");
+        exit(1);
     }
 
-    // Set codec parameters
-    vc->codec_context = avcodec_alloc_context3(codec);
-    vc->codec_context->width = width;
-    vc->codec_context->height = height;
-    vc->codec_context->time_base = (AVRational){1, fps};
-    vc->codec_context->framerate = (AVRational){fps, 1};
-    vc->codec_context->pix_fmt = AV_PIX_FMT_YUV420P;
+    // 为编码器分配上下文
+    *codec_context = avcodec_alloc_context3(codec);
+    if (!*codec_context) {
+        fprintf(stderr, "Could not allocate video codec context\n");
+        exit(1);
+    }
 
-    // Set stream parameters and open codec
-    avcodec_parameters_from_context(vc->video_stream->codecpar, vc->codec_context);
-    if (avcodec_open2(vc->codec_context, codec, NULL) < 0) {
+    // 设置编码参数（视频宽度、高度、像素格式、时间基准等）
+    (*codec_context)->height = HEIGHT;
+    (*codec_context)->width = WIDTH;
+    (*codec_context)->sample_aspect_ratio = (AVRational){1, 1};
+    (*codec_context)->pix_fmt = AV_PIX_FMT_YUV420P; // 使用 YUV 420P 格式
+    (*codec_context)->time_base = (AVRational){1, FPS}; // 帧率 25 fps
+
+    // 打开编码器
+    if (avcodec_open2(*codec_context, codec, NULL) < 0) {
         fprintf(stderr, "Could not open codec\n");
-        return;
+        exit(1);
     }
 
-    // Open output file
-    if (!(vc->format_context->oformat->flags & AVFMT_NOFILE)) {
-        if (avio_open(&vc->format_context->pb, filename, AVIO_FLAG_WRITE) < 0) {
-            fprintf(stderr, "Could not open output file '%s'\n", filename);
-            return;
+    // 将编码器的参数复制到视频流中
+    avcodec_parameters_from_context((*video_stream)->codecpar, *codec_context);
+
+    // 打开输出文件
+    if (!(format_context->oformat->flags & AVFMT_NOFILE)) {
+        if (avio_open(&format_context->pb, filename, AVIO_FLAG_WRITE) < 0) {
+            fprintf(stderr, "Could not open output file\n");
+            exit(1);
         }
     }
 
-    // Write file header
-    avformat_write_header(vc->format_context, NULL);
+    // 写入文件头
+    if (avformat_write_header(format_context, NULL) < 0) {
+        fprintf(stderr, "Error occurred when writing header\n");
+        exit(1);
+    }
 
-    // Allocate frame buffer
-    vc->frame = av_frame_alloc();
-    vc->frame->format = vc->codec_context->pix_fmt;
-    vc->frame->width = width;
-    vc->frame->height = height;
-    av_frame_get_buffer(vc->frame, 32);
-
-    // Set up conversion context to convert from YUYV to YUV420P
-    vc->sws_context = sws_getContext(width, height, AV_PIX_FMT_YUYV422,
-                                     width, height, AV_PIX_FMT_YUV420P,
-                                     SWS_BILINEAR, NULL, NULL, NULL);
-
-    vc->frame_index = 0;
+    return format_context;
 }
 
-void write_frame(VideoContext *vc, const uint8_t *yuyv_data) {
-    // Convert YUYV to YUV420P
-    const uint8_t *src_data[1] = { yuyv_data };
-    int src_linesize[1] = { vc->codec_context->width * 2 };
-    sws_scale(vc->sws_context, src_data, src_linesize, 0, vc->codec_context->height, vc->frame->data, vc->frame->linesize);
+// 编码并写入帧数据
+void encode_frame(AVCodecContext *codec_context, AVFormatContext *format_context, AVStream *video_stream, uint8_t *frame_data) {
+    AVFrame *frame = av_frame_alloc();
+    AVPacket packet;
 
-    vc->frame->pts = vc->frame_index++;
+    // 初始化 AVPacket
+    av_init_packet(&packet);
+    packet.data = NULL;
+    packet.size = 0;
 
-    // Encode the frame
-    AVPacket pkt;
-    av_init_packet(&pkt);
-    pkt.data = NULL;
-    pkt.size = 0;
+    // 设置 AVFrame 的基本参数
+    frame->format = codec_context->pix_fmt;
+    frame->width  = codec_context->width;
+    frame->height = codec_context->height;
+    
+    // 为帧分配缓冲区
+    av_frame_get_buffer(frame, 32);
 
-    int ret = avcodec_send_frame(vc->codec_context, vc->frame);
-    if (ret < 0) {
+    // 这里模拟将原始的 RGB24 数据拷贝到 AVFrame 中
+    // 实际上你可能需要根据输入数据的格式使用 libswscale 转换
+    memcpy(frame->data[0], frame_data, codec_context->width * codec_context->height * 3);
+
+    // 发送帧到编码器
+    if (avcodec_send_frame(codec_context, frame) < 0) {
         fprintf(stderr, "Error sending frame to encoder\n");
-        return;
+        exit(1);
     }
 
-    while (ret >= 0) {
-        ret = avcodec_receive_packet(vc->codec_context, &pkt);
-        if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
-            break;
-        } else if (ret < 0) {
-            fprintf(stderr, "Error encoding frame\n");
-            return;
-        }
-
-        // Write encoded packet
-        av_interleaved_write_frame(vc->format_context, &pkt);
-        av_packet_unref(&pkt);
+    // 从编码器中接收已编码的包
+    while (avcodec_receive_packet(codec_context, &packet) == 0) {
+        av_write_frame(format_context, &packet);
+        av_packet_unref(&packet);
     }
+
+    av_frame_free(&frame);
 }
 
-void close_video(VideoContext *vc) {
-    // Write trailer and clean up
-    av_write_trailer(vc->format_context);
-    avcodec_free_context(&vc->codec_context);
-    av_frame_free(&vc->frame);
-    sws_freeContext(vc->sws_context);
-    if (!(vc->format_context->oformat->flags & AVFMT_NOFILE)) {
-        avio_closep(&vc->format_context->pb);
+// 结束编码并写入文件尾
+void finalize(AVFormatContext *format_context, AVCodecContext *codec_context) {
+    // 写入文件尾
+    av_write_trailer(format_context);
+
+    // 关闭编码器
+    avcodec_close(codec_context);
+
+    // 关闭输出文件
+    if (!(format_context->oformat->flags & AVFMT_NOFILE)) {
+        avio_closep(&format_context->pb);
     }
-    avformat_free_context(vc->format_context);
+
+    // 释放格式上下文
+    avformat_free_context(format_context);
 }

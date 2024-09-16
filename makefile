@@ -2,7 +2,7 @@
 # CC = $(CROSS_COMPILE)gcc
 # CPP = $(CROSS_COMPILE)gcc
 # FORCE:
-BIN=app
+BIN=./bin/app
 CC=gcc
 CPP=g++
 
@@ -13,14 +13,19 @@ INCS+=-I./v4l2
 INCS+=-I./video_process
 
 ROOT_PATH = $(shell pwd)
-INCS+=-I${ROOT_PATH}/lib/ffmpeg/include 
-LIBS+=-L${ROOT_PATH}/lib/ffmpeg/lib -Wl,-rpath=${ROOT_PATH}/lib/ffmpeg/lib
-LIBS+=-L${ROOT_PATH}/lib/ffmpeg/lib -Wl,-rpath-link=${ROOT_PATH}/lib/ffmpeg/lib
+INCS+=-I${ROOT_PATH}/../../lib_install/ffmpeg/include 
+LIBS+=-L${ROOT_PATH}/../../lib_install/ffmpeg/lib -Wl,-rpath=${ROOT_PATH}/../../lib_install/ffmpeg/lib
+LIBS+=-L${ROOT_PATH}/../../lib_install/ffmpeg/lib -Wl,-rpath-link=${ROOT_PATH}/../../lib_install/ffmpeg/lib
 
 JPEG_LIBS+=-ljpeg
 PTHREAD_LIBS+=-lpthread
 FFMPEGLIB_LIBS+=-lavcodec -lavdevice -lavfilter -lavformat -lavutil -lswresample -lswscale 
 LDFLAGS=$(JPEG_LIBS) $(PTHREAD_LIBS) $(FFMPEGLIB_LIBS)
+
+
+# Debug flags
+CFLAGS=-g -O0  # -g for debug info, -O0 to disable optimization
+CPPFLAGS=-g -O0
 
 
 CSRCS:=$(wildcard *.c ./camera/*.c ./log/*.c ./v4l2/*.c ./video_process/*.c) 
@@ -41,8 +46,8 @@ $(BIN):$(COBJS) $(CPPOBJS)
 	$(CC) -o $(BIN) $(COBJS) $(CPPOBJS) $(LIBS) $(LDFLAGS) 
 
 clean:
-	rm $(BIN) $(COBJS) $(CPPOBJS)
+	rm $(COBJS) $(CPPOBJS)
 
-#export LD_LIBRARY_PATH=~/work/touch/ffmpeg_rd/lib/ffmpeg/lib:$LD_LIBRARY_PATH
+#export LD_LIBRARY_PATH=~/work/touch/lib_install/ffmpeg/lib:$LD_LIBRARY_PATH
 # ffmpeg -framerate 20 -i image%03d.jpg -c:v libx264 -pix_fmt yuv420p output.mp4
 

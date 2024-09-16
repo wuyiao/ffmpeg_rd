@@ -79,27 +79,43 @@ static int rgb2jpg(const char *pRgbData, const int width, const int height, int 
 }
 
 
-void * thread_camera()
+void *thread_camera()
 {
     LPF_SetResFpsFormat(960, 540, 20, V4L2_PIX_FMT_YUYV);
     LPF_StartRun(0);
 
-    char filename[100] = {0};  
-    VideoContext vc;
-    init_video(&vc, "output.mp4", 960, 540, 20);
+    // // 初始化 FFmpeg
+    // initialize_ffmpeg();
 
-    while(1)
+    // 设置输出文件
+    AVCodecContext *codec_context = NULL;
+    AVStream *video_stream = NULL;
+    AVFormatContext *format_context = setup_output("./bin/camera.mp4", &codec_context, &video_stream);
+
+    int image_num = 0;
+
+    while (1)
     {
-        // sprintf(filename,"/home/x6/work/touch/ffmpeg_rd/image%03d.jpg",image_nunm++);
-        LPF_GetFrame();
-        write_frame(&vc, rgb24);
-        // rgb2jpg(rgb24,960,540,1,filename,IMAGE_SIZE_YUYV);
-        usleep(50000);
+        LPF_GetFrame();  // 获取一帧数据
+        
+
+        encode_frame(codec_context, format_context, video_stream, rgb24);
+        // 可选：可以在这里进行 JPEG 图像保存，但要注意可能对性能有影响
+        // sprintf(filename, "/home/wuyiao/work/touch/gitfile/ffmpeg_rd/image%03d.jpg", image_num);
+        // rgb2jpg(rgb24, 960, 540, 1, filename, IMAGE_SIZE_YUYV);
+        
+        usleep(50000);  // 控制帧率为 20fps (50 毫秒间隔)
+
+        if (image_num++ > 100)  // 当写入超过 100 帧时结束
+        {
+            finalize(format_context, codec_context);
+            LPF_StopRun();  // 停止获取帧数据
+            break;  // 退出循环
+        }
     }
-    close_video(&vc);
+
+    return NULL;
 }
-
-
 
 
 int init_camera_thread(pthread_t *camera_tid)
