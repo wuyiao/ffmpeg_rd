@@ -1,7 +1,7 @@
 #!/bin/bash
-log_dir=./bin/log/
-log_file="${log_dir}ffmpeg_rd.log"
-backup_dir="${log_dir}backup/"
+log_dir=$(pwd)/bin/log/
+log_file="$(pwd)/bin/log/ffmpeg_rd.log"
+backup_dir="$(pwd)/bin/log/backup/"
 
 # 创建备份目录（如果不存在）
 mkdir -p $backup_dir
