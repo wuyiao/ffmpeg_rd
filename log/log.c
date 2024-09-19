@@ -187,7 +187,7 @@ void time_tmp(char * time1)
 
 FILE * log_init(int log_level_terminal, int log_level_file)
 {
-  FILE *fp = fopen("./log/ffmpeg_rd.log", "a+");
+  FILE *fp = fopen("./bin/log/ffmpeg_rd.log", "a+");
   if(fp == NULL)
   {
     log_debug("create log file failed.\n");
